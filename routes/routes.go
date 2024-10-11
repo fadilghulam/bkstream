@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +46,20 @@ type NotificationPayload struct {
 	AppName       *string `json:"app_name"`
 }
 
+type UpdateStatePayload struct {
+	UserId    *int32  `json:"userId"`
+	AppName   *string `json:"appName"`
+	State     *string `json:"state"`
+	Url       *string `json:"url"`
+	Body      *string `json:"body"`
+	Error     *string `json:"error"`
+	Timestamp *string `json:"timestamp"`
+	Route     *string `json:"route"`
+}
+
 func SocketIoSetup(app *fiber.App) {
+
+	fmt.Println("socket io running...")
 
 	socketio := socket.NewServer(nil, nil)
 
@@ -114,7 +126,7 @@ func SocketIoSetup(app *fiber.App) {
 		// Emit the map as JSON to the client
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			log.Println("Error marshalling data:", err)
+			fmt.Println("Error marshalling data:", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(helpers.ResponseWithoutData{
 				Success: false,
 				Message: "Server error",
@@ -156,7 +168,7 @@ func SocketIoSetup(app *fiber.App) {
 		// Emit the map as JSON to the client
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			log.Println("Error marshalling data:", err)
+			fmt.Println("Error marshalling data:", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(helpers.ResponseWithoutData{
 				Success: false,
 				Message: "Server error",
@@ -198,7 +210,7 @@ func SocketIoSetup(app *fiber.App) {
 		// Emit the map as JSON to the client
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			log.Println("Error marshalling data:", err)
+			fmt.Println("Error marshalling data:", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(helpers.ResponseWithoutData{
 				Success: false,
 				Message: "Server error",
@@ -223,7 +235,7 @@ func SocketIoSetup(app *fiber.App) {
 		for {
 			notification, err := db.DBPGX.WaitForNotification(context.Background())
 			if err != nil {
-				log.Fatalf("Error waiting for notification: %v\n", err)
+				fmt.Printf("Error waiting for notification: %v\n", err)
 			}
 
 			if notification.Channel == "onapproved" {
@@ -231,7 +243,7 @@ func SocketIoSetup(app *fiber.App) {
 				var payload NotificationPayload
 				err = json.Unmarshal([]byte(notification.Payload), &payload)
 				if err != nil {
-					log.Fatalf("Error unmarshalling JSON: %v\n", err)
+					fmt.Printf("Error unmarshalling JSON: %v\n", err)
 				}
 
 				wsLog := new(structs.WebSocketLog)
@@ -251,7 +263,7 @@ func SocketIoSetup(app *fiber.App) {
 						// Emit the map as JSON to the client
 						jsonData, err := json.Marshal(data)
 						if err != nil {
-							log.Println("Error marshalling data:", err)
+							fmt.Println("Error marshalling data:", err)
 						}
 
 						socketio.To(socket.Room(wsLog.SocketID)).Emit("doEvent", string(jsonData))
@@ -264,7 +276,7 @@ func SocketIoSetup(app *fiber.App) {
 			// var payload NotificationPayload
 			// err = json.Unmarshal([]byte(notification.Payload), &payload)
 			// if err != nil {
-			// 	log.Fatalf("Error unmarshalling JSON: %v\n", err)
+			// 	fmt.Printf("Error unmarshalling JSON: %v\n", err)
 			// }
 
 			// fmt.Println(&payload)
@@ -333,6 +345,49 @@ func SocketIoSetup(app *fiber.App) {
 		// 	fmt.Println(args[1])
 		// })
 
+		client.On("updateState", func(args ...interface{}) {
+			var payload UpdateStatePayload
+			err = json.Unmarshal([]byte(args[0].(string)), &payload)
+			if err != nil {
+				fmt.Println("Error unmarshalling JSON: %v\n", err)
+			}
+
+			wsState := new(structs.WebSocketState)
+			wsState.UserID = *payload.UserId
+			wsState.AppName = *payload.AppName
+			wsState.Route = *payload.Route
+			wsState.State = *payload.State
+			if payload.Url != nil {
+				wsState.Url = payload.Url
+			} else {
+				wsState.Url = nil
+			}
+
+			if payload.Body != nil {
+				wsState.Body = payload.Body
+			} else {
+				wsState.Body = nil
+			}
+
+			if payload.Error != nil {
+				wsState.Error = payload.Error
+			} else {
+				wsState.Error = nil
+			}
+			wsState.Timestamp = *payload.Timestamp
+
+			tx := db.DB.Begin()
+			if err := tx.Create(&wsState).Error; err != nil {
+				tx.Rollback()
+				fmt.Println("Error creating WebSocketState: ", err)
+			}
+
+			if err := tx.Commit().Error; err != nil {
+				tx.Rollback()
+				fmt.Println("Error commit WebSocketState: ", err)
+			}
+		})
+
 		client.On("disconnect", func(args ...interface{}) {
 			// fmt.Println("Client disconnected: ", client.Id())
 			client.Disconnect(true)
@@ -342,29 +397,6 @@ func SocketIoSetup(app *fiber.App) {
 		})
 	})
 
-	socketio.On("disconnect", func(clients ...interface{}) {
-		client := clients[0].(*socket.Socket)
-		fmt.Println("Client disconnected: ", client.Id())
-		client.Disconnect(true)
-	})
-
-	socketio.Of("/connectCustomer", nil).On("connection", func(clients ...interface{}) {
-		client := clients[0].(*socket.Socket)
-		client.On("userId", func(args ...interface{}) {
-			userIdClient := args[0].(string)
-			result, err := helpers.RefreshUser(userIdClient)
-			if err != nil {
-				fmt.Println(err)
-				client.Emit("returnData", "Failed to get user data")
-			}
-			client.Emit("returnData", result)
-		})
-	})
 	app.Get("/socket.io", adaptor.HTTPHandler(socketio.ServeHandler(nil)))
 	app.Post("/socket.io", adaptor.HTTPHandler(socketio.ServeHandler(nil)))
-
-	app.Use("/ws/*", func(c *fiber.Ctx) error {
-		socketio.ServeClient()
-		return nil
-	})
 }
