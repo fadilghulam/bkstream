@@ -9,10 +9,10 @@ type WebSocketState struct {
 	UserID    int32   `gorm:"column:user_id;not null" json:"userId"`
 	Route     string  `gorm:"column:route;not null" json:"route"`
 	State     string  `gorm:"column:state;not null" json:"state"`
-	Url       *string `gorm:"column:url" json:"url"`
+	Url       *string `gorm:"column:url;default:null" json:"url"`
 	Timestamp string  `gorm:"column:timestamp;default: now()" json:"timestamp"`
-	Body      *string `gorm:"column:body" json:"body"`
-	Error     *string `gorm:"column:error" json:"error"`
+	Body      *string `gorm:"column:body;default:null" json:"body"`
+	Error     *string `gorm:"column:error;default:null" json:"error"`
 }
 
 // TableName WebSocketState's table name
