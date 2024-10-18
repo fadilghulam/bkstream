@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -13,12 +14,10 @@ import (
 	"gorm.io/gorm/clause"
 
 	db "bkstream/config"
-	"bkstream/structs"
-
 	// "bkstream/controllers"
 	// mobile "bkstream/controllers/mobile"
-
 	"bkstream/helpers"
+	"bkstream/structs"
 
 	"github.com/zishang520/socket.io/v2/socket"
 )
@@ -31,12 +30,60 @@ func Setup(app *fiber.App) {
 	// 	app.Post("login", controllers.Login)
 	// 	app.Post("sendOtp", controllers.SendOtp)
 
-	app.Get("/getUtcTime", func(c *fiber.Ctx) error {
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{
-			"message": "success",
-			"data":    time.Now().UTC(),
-		})
-	})
+	// 	app.Get("/getUtcTime", func(c *fiber.Ctx) error {
+	// 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	// 			"message": "success",
+	// 			"data":    time.Now().UTC(),
+	// 		})
+	// 	})
+
+	// 	app.Get("/cronGenerateUserId", controllers.GenerateTransactionsUserId)
+	// 	app.Get("/testCronGenerateUserId", controllers.TestGenerateUserId)
+	// 	app.Get("/cronGenerateUserLog", controllers.GenerateUserLog)
+
+	// 	app.Get("/generateFlag", controllers.GenerateFlag)
+	// 	app.Get("/getData", controllers.GetData)
+	// 	app.Get("/getDataToday", controllers.GetDataToday)
+
+	// 	app.Post("/insertTransactions", mobile.InsertTransactions)
+
+	// 	serviceRoute := app.Group("service")
+	// 	serviceRoute.Post("doUpload", controllers.DoUpload)
+
+	// 	officeRoute := app.Group("office")
+	// 	// officeRoute.Use(AuthMiddleware)
+
+	// 	officeRoute.Get("/getProductTrends", controllers.GetProductTrends)
+	// 	officeRoute.Get("/TestQuery", controllers.TestQuery)
+	// 	officeRoute.Get("/getSalesmanDaily", controllers.GetSalesmanDailySales)
+	// 	officeRoute.Get("/getUserBranch", controllers.GetUserBranch)
+
+	// 	mobileRoute := app.Group("pluto-mobile")
+	// 	mobileRoute.Get("/", func(c *fiber.Ctx) error {
+	// 		return c.SendString("Landing Page Pluto Mobile!")
+	// 	})
+
+	// 	mobileRoute.Get("getAppVersioning", mobile.GetAppVersioning)
+
+	// 	mobileRoute.Get("getGudang", mobile.GetGudang)
+	// 	mobileRoute.Get("getProdukGudang", mobile.GetProdukByGudang)
+	// 	mobileRoute.Get("getItemGudang", mobile.GetItemByGudang)
+	// 	mobileRoute.Post("confirmOrder", mobile.ConfirmOrder)
+
+	// 	mobileRoute.Get("getListPengajuan", mobile.GetDataRequests)
+
+	// 	//sales
+	// 	mobileRoute.Get("getStokProduk", mobile.GetStokProduk)
+	// 	mobileRoute.Get("getListOrder", mobile.GetListOrder)
+	// 	mobileRoute.Post("postOrder", mobile.PostOrder)
+
+	// 	//md
+	// 	mobileRoute.Get("getStokItem", mobile.GetStokItem)
+	// 	mobileRoute.Get("getListOrderItem", mobile.GetListOrderMD)
+	// 	mobileRoute.Post("postOrderItem", mobile.PostOrderMD)
+
+	// 	mobileRoute.Use(AuthMiddleware)
+	// 	mobileRoute.Post("getRefreshUser", controllers.RefreshDataUser)
 }
 
 type NotificationPayload struct {
@@ -58,8 +105,6 @@ type UpdateStatePayload struct {
 }
 
 func SocketIoSetup(app *fiber.App) {
-
-	fmt.Println("socket io running...")
 
 	socketio := socket.NewServer(nil, nil)
 
@@ -218,6 +263,11 @@ func SocketIoSetup(app *fiber.App) {
 		}
 
 		socketio.To(socket.Room(wsLog.SocketID)).Emit("doEvent", string(jsonData))
+		// if err := socketio.To(socket.Room(wsLog.SocketID)).Emit("doEvent", string(jsonData)); err != nil {
+		// 	fmt.Println("Error emitting event:", err)
+		// } else {
+		// 	fmt.Println("Event sent successfully")
+		// }
 
 		return c.Status(fiber.StatusOK).JSON(helpers.ResponseWithoutData{
 			Success: true,
@@ -345,12 +395,52 @@ func SocketIoSetup(app *fiber.App) {
 		// 	fmt.Println(args[1])
 		// })
 
-		client.On("updateState", func(args ...interface{}) {
+		client.On("setState", func(args ...interface{}) {
 			var payload UpdateStatePayload
-			err = json.Unmarshal([]byte(args[0].(string)), &payload)
-			if err != nil {
-				fmt.Println("Error unmarshalling JSON: %v\n", err)
+			// err = json.Unmarshal([]byte(args[0].(string)), &payload)
+			switch args[0].(type) {
+			case string:
+				err = json.Unmarshal([]byte(args[0].(string)), &payload)
+				if err != nil {
+					fmt.Println("Error unmarshalling JSON: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+			case map[string]interface{}:
+				data, err := json.Marshal(args[0].(map[string]interface{}))
+				if err != nil {
+					fmt.Println("Error marshalling data: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+				err = json.Unmarshal(data, &payload)
+				if err != nil {
+					fmt.Println("Error unmarshalling JSON: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
 			}
+			// data, err := json.Marshal(args[0].(map[string]interface{}))
+			// if err != nil {
+			// 	fmt.Println("Error marshalling data: %v\n", err)
+			// 	return
+			// }
+			// err = json.Unmarshal(data, &payload)
+			// if err != nil {
+			// 	fmt.Println("Error unmarshalling JSON: %v\n", err)
+			// }
 
 			wsState := new(structs.WebSocketState)
 			wsState.UserID = *payload.UserId
@@ -380,12 +470,255 @@ func SocketIoSetup(app *fiber.App) {
 			if err := tx.Create(&wsState).Error; err != nil {
 				tx.Rollback()
 				fmt.Println("Error creating WebSocketState: ", err)
+				socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+					Success: false,
+					Message: "Terjadi kesalahan input data",
+					Data:    nil,
+					Error:   err.Error(),
+				})
+
 			}
 
 			if err := tx.Commit().Error; err != nil {
 				tx.Rollback()
 				fmt.Println("Error commit WebSocketState: ", err)
+				socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+					Success: false,
+					Message: "Terjadi kesalahan simpan data",
+					Data:    nil,
+					Error:   err.Error(),
+				})
 			}
+
+			// socketio.To(socket.Room(client.Id())).Emit("setStateResult", wsState)
+			socketio.To(socket.Room(client.Id())).Emit("setStateResult", helpers.ResponseWebSocket{
+				Success: true,
+				Message: "Data berhasil disimpan",
+				Data:    wsState,
+				Error:   "null",
+			})
+			// err = socketio.To(socket.Room(client.Id())).Emit("updateState", wsState)
+			// if err != nil {
+			// 	fmt.Println("Error while emitting to room:", err)
+			// } else {
+			// 	fmt.Println("Successfully emitted to room:", "test")
+			// }
+		})
+
+		client.On("setTransaction", func(args ...interface{}) {
+
+			type TemplateInputUser struct {
+				Data      map[string]interface{} `json:"data"`
+				DeletedID map[string]interface{} `json:"deletedId"`
+			}
+
+			var inputUser TemplateInputUser
+
+			switch args[0].(type) {
+			case string:
+				err = json.Unmarshal([]byte(args[0].(string)), &inputUser)
+				if err != nil {
+					fmt.Println("Error unmarshalling JSON: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+			case map[string]interface{}:
+				data, err := json.Marshal(args[0].(map[string]interface{}))
+				if err != nil {
+					fmt.Println("Error marshalling data: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+					return
+				}
+				err = json.Unmarshal(data, &inputUser)
+				if err != nil {
+					fmt.Println("Error unmarshalling JSON: %v\n", err)
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Terjadi kesalahan mengambil input data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+			}
+
+			result := make(map[string][]map[string]interface{})
+
+			tx := db.DB.Begin()
+
+			for tableName, records := range inputUser.DeletedID {
+				instanceSliceDelete, err := structs.GetStructInstanceByTableName(tableName)
+				if err != nil {
+					tx.Rollback()
+					fmt.Println("Gagal mendapatkan tabel data, " + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal mendapatkan tabel data delete",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				whereIdIn := strings.Split(records.(string), ",")
+
+				if err := tx.Clauses(clause.Returning{}).Where("id IN (?)", whereIdIn).Delete(instanceSliceDelete).Error; err != nil {
+					tx.Rollback()
+					fmt.Println("Gagal delete data " + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal delete data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				recordsValue := reflect.ValueOf(instanceSliceDelete).Elem() // dereference the pointer to slice
+				for i := 0; i < recordsValue.Len(); i++ {
+					record := recordsValue.Index(i).Interface() // access the individual record
+
+					// Use reflection to get id, sync_key, and created_at fields from the record
+					id := reflect.ValueOf(record).FieldByName("ID").Interface()
+					createdAtField := reflect.ValueOf(record).FieldByName("CreatedAt")
+					dtmCrtField := reflect.ValueOf(record).FieldByName("DtmCrt")
+					syncKeyField := reflect.ValueOf(record).FieldByName("SyncKey")
+					var syncKey interface{}
+
+					if createdAtField.IsValid() {
+						syncKey = createdAtField.Interface()
+					}
+
+					if dtmCrtField.IsValid() {
+						syncKey = dtmCrtField.Interface()
+					}
+
+					if syncKeyField.IsValid() {
+						syncKey = syncKeyField.Interface()
+					}
+
+					result[tableName] = append(result[tableName], map[string]interface{}{
+						"id":       id,
+						"sync_key": syncKey,
+					})
+				}
+			}
+
+			tx.Commit()
+
+			tx = db.DB.Begin()
+			for tableName, records := range inputUser.Data {
+
+				instanceSlice, err := structs.GetStructInstanceByTableName(tableName)
+				if err != nil {
+					tx.Rollback()
+					fmt.Println("Gagal mendapatkan tabel data " + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal mendapatkan tabel data insert",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				recordsBytes, err := json.Marshal(records)
+				if err != nil {
+					tx.Rollback()
+					fmt.Println("Gagal konversi data tabel " + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal memproses data insert",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				if err := json.Unmarshal(recordsBytes, instanceSlice); err != nil {
+					tx.Rollback()
+					// return c.Status(fiber.StatusBadRequest).SendString("Failed to parse records: " + err.Error())
+					fmt.Println("Gagal konversi data tabel" + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal memproses data insert",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				var tempIds []string
+				recordsValue := reflect.ValueOf(instanceSlice).Elem() // dereference the pointer to slice
+				for i := 0; i < recordsValue.Len(); i++ {
+					record := recordsValue.Index(i).Interface() // access the individual record
+
+					// Use reflection to get id, sync_key, and created_at fields from the record
+					id := reflect.ValueOf(record).FieldByName("ID").Interface()
+
+					tempIds = append(tempIds, fmt.Sprintf("%v", id))
+				}
+
+				if err := tx.Clauses(clause.Returning{}).Save(instanceSlice).Error; err != nil {
+					tx.Rollback()
+					fmt.Println("Gagal insert data" + err.Error())
+					socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+						Success: false,
+						Message: "Gagal menyimpan data",
+						Data:    nil,
+						Error:   err.Error(),
+					})
+				}
+
+				tx.Where("id IN (?)", tempIds).Find(instanceSlice)
+
+				recordsValue = reflect.ValueOf(instanceSlice).Elem() // dereference the pointer to slice
+				for i := 0; i < recordsValue.Len(); i++ {
+					record := recordsValue.Index(i).Interface() // access the individual record
+
+					// Use reflection to get id, sync_key, and created_at fields from the record
+					id := reflect.ValueOf(record).FieldByName("ID").Interface()
+					createdAtField := reflect.ValueOf(record).FieldByName("CreatedAt")
+					dtmCrtField := reflect.ValueOf(record).FieldByName("DtmCrt")
+					syncKeyField := reflect.ValueOf(record).FieldByName("SyncKey")
+					var syncKey interface{}
+
+					if createdAtField.IsValid() {
+						syncKey = createdAtField.Interface()
+					}
+
+					if dtmCrtField.IsValid() {
+						syncKey = dtmCrtField.Interface()
+					}
+
+					if syncKeyField.IsValid() {
+						syncKey = syncKeyField.Interface()
+					}
+
+					result[tableName] = append(result[tableName], map[string]interface{}{
+						"id":       id,
+						"sync_key": syncKey,
+					})
+				}
+			}
+			tx.Commit()
+
+			// return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			// 	"message": "success",
+			// 	"data":    result,
+			// })
+
+			// socketio.To(socket.Room(client.Id())).Emit("setTransactionResult ", result)
+			socketio.To(socket.Room(client.Id())).Emit("setTransactionResult", helpers.ResponseWebSocket{
+				Success: true,
+				Message: "Data berhasil disimpan",
+				Data:    result,
+				Error:   "null",
+			})
+
 		})
 
 		client.On("disconnect", func(args ...interface{}) {

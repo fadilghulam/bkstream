@@ -53,6 +53,30 @@ func ExecuteGORMQueryOrdered(query string, resultsChan chan<- map[int][]*newOrde
 	resultsChan <- map[int][]*newOrderedmap.OrderedMap{index: results}
 }
 
+func ExecuteGORMQueryOrdered2(query string) ([]*orderedmap.OrderedMap[string, interface{}], error) {
+
+	queries := fmt.Sprintf(`SELECT JSON_AGG(data) as data FROM (%s) AS data`, query)
+
+	rows, err := db.DB.Raw(queries).Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	results, err := JsonDecode2(rows, columns, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 func ExecuteGORMQueryWithoutResult(query string, wg *sync.WaitGroup) {
 	defer wg.Done()
 

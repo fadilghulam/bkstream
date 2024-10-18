@@ -26,8 +26,8 @@ func main() {
 	// }
 	))
 	//routing
+	routes.Setup(app)
 	routes.SocketIoSetup(app)
-	// routes.Setup(app)
 
 	addr := fmt.Sprintf("%s:%s", os.Getenv("HOST"), os.Getenv("PORT"))
 	// addr := fmt.Sprintf("%s:%s", os.Getenv("HOST"), "4011")
