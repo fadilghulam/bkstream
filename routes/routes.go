@@ -14,7 +14,8 @@ import (
 	"gorm.io/gorm/clause"
 
 	db "bkstream/config"
-	// "bkstream/controllers"
+	"bkstream/controllers"
+
 	// mobile "bkstream/controllers/mobile"
 	"bkstream/helpers"
 	"bkstream/structs"
@@ -26,6 +27,8 @@ func Setup(app *fiber.App) {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Landing Page!")
 	})
+
+	app.Get("/testRedis", controllers.GetDataCustomerRedis)
 
 	// 	app.Post("login", controllers.Login)
 	// 	app.Post("sendOtp", controllers.SendOtp)
