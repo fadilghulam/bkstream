@@ -36,6 +36,8 @@ func GetDataCustomerRedis(c *fiber.Ctx) error {
 
 	exists, err := db.RedisClient.Exists(ctx, cacheKey).Result()
 
+	// keys, err := db.RedisClient.Do(ctx, "KEYS", "*").Result()
+
 	if errors.Is(err, redis.Nil) || exists == 0 {
 		// Cache miss - query the database
 		customers := []structs.Customer{}

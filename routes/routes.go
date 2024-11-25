@@ -29,6 +29,7 @@ func Setup(app *fiber.App) {
 	})
 
 	app.Get("/testRedis", controllers.GetDataCustomerRedis)
+	app.Get("getDashboardOmzet", controllers.GetDashboardOmzet)
 
 	// 	app.Post("login", controllers.Login)
 	// 	app.Post("sendOtp", controllers.SendOtp)
@@ -151,9 +152,10 @@ func SocketIoSetup(app *fiber.App) {
 		userId := c.Query("userId")
 		appName := c.Query("appName")
 
-		wsLog := new(structs.WebSocketLog)
+		wsLog := new([]structs.WebSocketLog)
 
-		if err := db.DB.First(&wsLog, "user_id = ? AND app_name = ?", userId, appName).Error; err != nil {
+		// if err := db.DB.First(&wsLog, "user_id = ? AND app_name = ?", userId, appName).Order("datetime DESC").Error; err != nil {
+		if err := db.DB.Where("user_id = ? AND app_name = ?", userId, appName).Find(&wsLog).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(helpers.ResponseWithoutData{
 				Success: false,
 				Message: "Gagal mendapatkan data user",
@@ -181,7 +183,11 @@ func SocketIoSetup(app *fiber.App) {
 			})
 		}
 
-		socketio.To(socket.Room(wsLog.SocketID)).Emit("doEvent", string(jsonData))
+		for i := 0; i < len(*wsLog); i++ {
+			socketio.To(socket.Room((*wsLog)[i].SocketID)).Emit("doEvent", string(jsonData))
+		}
+
+		// socketio.To(socket.Room(wsLog.SocketID)).Emit("doEvent", string(jsonData))
 
 		return c.Status(fiber.StatusOK).JSON(helpers.ResponseWithoutData{
 			Success: true,
@@ -283,6 +289,11 @@ func SocketIoSetup(app *fiber.App) {
 		fmt.Println("Error setting up listener: %v\n", err.Error())
 	}
 
+	_, err = db.DBPGX.Exec(context.Background(), "LISTEN ontransaction")
+	if err != nil {
+		fmt.Println("Error setting up listener: %v\n", err.Error())
+	}
+
 	go func() {
 
 		for {
@@ -340,6 +351,21 @@ func SocketIoSetup(app *fiber.App) {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(10 * time.Second) // Create a ticker for 10-second intervals
+		defer ticker.Stop()                        // Ensure the ticker stops when the function exits
+
+		for {
+			select {
+			case <-ticker.C: // Every 10 seconds
+				fmt.Println("emit")
+				datas, _ := controllers.FetchDashboardOmzet("", "", "", "a")
+				socketio.To("office").Emit("upDashboard", datas)
+				// Add your task logic here
+			}
+		}
+	}()
+
 	socketio.On("connection", func(clients ...any) {
 		client := clients[0].(*socket.Socket)
 
@@ -376,6 +402,8 @@ func SocketIoSetup(app *fiber.App) {
 			tx.Rollback()
 			fmt.Println("Error commit WebSocketLog: ", err)
 		}
+
+		client.Join(socket.Room(strings.ToLower(appName)))
 
 		for _, vRoom := range tempRooms {
 			// socketio.To(socket.Room(room)).Emit("newUser", userId)
@@ -726,6 +754,9 @@ func SocketIoSetup(app *fiber.App) {
 
 		client.On("disconnect", func(args ...interface{}) {
 			// fmt.Println("Client disconnected: ", client.Id())
+
+			db.DB.Where("client_id = ?", client.Id()).Delete(&structs.WebSocketLog{})
+
 			client.Disconnect(true)
 
 			// allClients2 := socketio.Of("/", nil).Sockets()
